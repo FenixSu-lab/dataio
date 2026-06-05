@@ -1,0 +1,280 @@
+:root {
+  color-scheme: light;
+  font-family: "Inter", "Microsoft YaHei", system-ui, sans-serif;
+  background: #f5f7fb;
+  color: #1f2937;
+}
+
+body {
+  margin: 0;
+}
+
+header {
+  align-items: center;
+  background: #111827;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  padding: 32px 48px;
+}
+
+.tabs {
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 48px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.tab {
+  background: #eef2ff;
+  color: #1f2937;
+  white-space: nowrap;
+}
+
+.tab.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+h1, h2, p {
+  margin-top: 0;
+}
+
+button {
+  background: #2563eb;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+button.secondary {
+  background: #4b5563;
+}
+
+button.danger {
+  background: #dc2626;
+}
+
+button.mini {
+  font-size: 12px;
+  margin-left: 8px;
+  padding: 4px 8px;
+}
+
+main {
+  padding: 24px 48px 48px;
+}
+
+.module {
+  display: none;
+  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.module.active {
+  display: grid;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 6%);
+  padding: 22px;
+}
+
+.card.full {
+  grid-column: 1 / -1;
+}
+
+.searchbar {
+  display: flex;
+  gap: 10px;
+}
+
+.toolbar {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto auto auto;
+  margin-bottom: 10px;
+}
+
+.searchbar input {
+  flex: 1;
+}
+
+.grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+input, select, textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font: inherit;
+  padding: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+textarea {
+  grid-column: 1 / -1;
+  min-height: 120px;
+}
+
+.list, .schema {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.item {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+details.item summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.column-row {
+  align-items: center;
+  border-top: 1px dashed #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+}
+
+.inline-annotation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.annotation-note {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  color: #166534;
+  display: inline-block;
+  font-family: "Inter", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 12px;
+  max-width: 720px;
+  overflow: hidden;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-note {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+dialog {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgb(15 23 42 / 28%);
+  width: min(900px, calc(100vw - 40px));
+}
+
+.dialog-card {
+  display: grid;
+  gap: 12px;
+}
+
+.dialog-card textarea {
+  min-height: 260px;
+}
+
+.dialog-card pre {
+  background: #0f172a;
+  border-radius: 12px;
+  color: #d1fae5;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.item.active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 15%);
+}
+
+.hint, .eyebrow {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+header .hint, header .eyebrow {
+  color: #9ca3af;
+}
+
+.columns {
+  color: #4b5563;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+#question, #sql {
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+#result {
+  background: #0f172a;
+  border-radius: 12px;
+  color: #d1fae5;
+  max-height: 360px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.policy {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  color: #1e3a8a;
+  margin: 12px 0;
+  padding: 12px;
+}
+
+.policy p {
+  margin: 6px 0;
+}
+
+@media (max-width: 900px) {
+  header, main, .tabs {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  main, .grid, .module, .toolbar {
+    grid-template-columns: 1fr;
+  }
+}
