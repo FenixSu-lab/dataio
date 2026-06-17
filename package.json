@@ -7,20 +7,23 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "reset:demo": "node scripts/reset-demo-data.js",
+    "seed:demo": "node scripts/seed-medium-demo-data.js",
+    "logs": "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force logs | Out-Null; if (!(Test-Path logs/runtime.log)) { New-Item -ItemType File logs/runtime.log | Out-Null }; Get-Content logs/runtime.log -Tail 100 -Wait\"",
     "test": "node scripts/api-smoke-test.js",
     "test:db": "node scripts/db-integration-test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "mssql": "^11.0.1",
     "node-sql-parser": "^5.3.8",
     "openai": "^4.56.0",
+    "pg": "^8.21.0",
     "zod": "^3.23.8"
   },
   "optionalDependencies": {
-    "mssql": "^11.0.1",
-    "mysql2": "^3.22.4",
-    "pg": "^8.12.0"
+    "mysql2": "^3.22.4"
   },
   "engines": {
     "node": ">=20"

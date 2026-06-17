@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "endpoint": "http://localhost:3001/api/task-runs",
+  "modelId": "mdl_deepseek-deepseek-v4-pro_9fmnwH",
+  "owner": "DataIO",
+  "timeoutMs": 3000,
+  "failureMode": "block",
+  "qualityScore": null,
+  "metadata": {
+    "environment": "local"
+  }
+}
