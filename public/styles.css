@@ -445,6 +445,19 @@ dialog {
   min-height: 260px;
 }
 
+.page-status {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 12px;
+  color: #9a3412;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+}
+
+.page-status.hidden {
+  display: none;
+}
+
 @media (max-width: 960px) {
   .app-shell {
     grid-template-columns: 1fr;

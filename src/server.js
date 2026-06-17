@@ -1100,7 +1100,7 @@ app.get("/api/health", (_request, response) => {
 });
 app.get("/api/settings/ai", async (_request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ¥è¯¢ AI éç½®ãç³»ç»æç¤ºè¯å?ModelOps éç½®ã?    const store = await loadStore();
+    const store = await loadStore();
     const systemPrompt = await loadAiSystemPrompt();
     const modelOps = await loadModelOpsConfig();
     response.json({
@@ -1134,7 +1134,7 @@ app.get("/api/settings/ai", async (_request, response, next) => {
 
 app.post("/api/settings/ai", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ°å¢ AI éç½®æ¡£æ¡ã?    const input = aiSettingsSchema.parse(request.body);
+    const input = aiSettingsSchema.parse(request.body);
     const store = await loadStore();
     const profile = {
       id: input.id || randomUUID(),
@@ -1155,7 +1155,7 @@ app.post("/api/settings/ai", async (request, response, next) => {
 
 app.put("/api/settings/ai/:id", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ´æ° AI éç½®æ¡£æ¡ã?    const input = aiSettingsSchema.partial().parse(request.body);
+    const input = aiSettingsSchema.partial().parse(request.body);
     const store = await loadStore();
     const profile = store.aiProfiles.find((item) => item.id === request.params.id);
     if (!profile) {
@@ -1173,7 +1173,7 @@ app.put("/api/settings/ai/:id", async (request, response, next) => {
 
 app.delete("/api/settings/ai/:id", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼å é¤ AI éç½®æ¡£æ¡ã?    const store = await loadStore();
+    const store = await loadStore();
     store.aiProfiles = store.aiProfiles.filter((profile) => profile.id !== request.params.id);
     if (store.activeAiProfileId === request.params.id) {
       store.activeAiProfileId = store.aiProfiles[0]?.id ?? null;
@@ -1187,7 +1187,7 @@ app.delete("/api/settings/ai/:id", async (request, response, next) => {
 
 app.post("/api/settings/ai/:id/activate", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼åæ¢å½åæ¿æ´»ç AI éç½®æ¡£æ¡ã?    const store = await loadStore();
+    const store = await loadStore();
     const profile = store.aiProfiles.find((item) => item.id === request.params.id);
     if (!profile) {
       const error = new Error("AI profile not found");
@@ -1204,7 +1204,7 @@ app.post("/api/settings/ai/:id/activate", async (request, response, next) => {
 
 app.get("/api/catalog/search", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æå³é®è¯æç´¢æ°æ®ç®å½ä¸­çè¡¨ä¸å­æ®µã?    const store = await loadStore();
+    const store = await loadStore();
     response.json({
       query: String(request.query.q ?? ""),
       results: buildCatalogSearchResults(store, request.query.q, request.query.connectionId)
@@ -1216,7 +1216,7 @@ app.get("/api/catalog/search", async (request, response, next) => {
 
 app.get("/api/catalog/coverage", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼çæç®å½è¦ççæ¥åã?    const store = await loadStore();
+    const store = await loadStore();
     const scope = request.query.scope === "key" ? "key" : "all";
     response.json({ reports: buildCoverageReport(store, request.query.connectionId, scope) });
   } catch (error) {
@@ -1226,7 +1226,7 @@ app.get("/api/catalog/coverage", async (request, response, next) => {
 
 app.get("/api/catalog/export", async (_request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼å¯¼åºå½åç®å½ç¥è¯åºã?    const store = await loadStore();
+    const store = await loadStore();
     response.json(exportKnowledgeCatalog(store));
   } catch (error) {
     next(error);
@@ -1235,7 +1235,7 @@ app.get("/api/catalog/export", async (_request, response, next) => {
 
 app.post("/api/catalog/import", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼å¯¼å¥å¤é¨ç®å½ç¥è¯åºã?    const store = await loadStore();
+    const store = await loadStore();
     const summary = importKnowledgeCatalog(store, request.body);
     await saveStore(store);
     response.status(201).json({ ok: true, ...summary });
@@ -1246,7 +1246,7 @@ app.post("/api/catalog/import", async (request, response, next) => {
 
 app.get("/api/connections", async (_request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼ååºå¨é¨æ°æ®è¿æ¥ã?    const store = await loadStore();
+    const store = await loadStore();
     response.json(store.connections.map(publicConnection));
   } catch (error) {
     next(error);
@@ -1255,7 +1255,7 @@ app.get("/api/connections", async (_request, response, next) => {
 
 app.post("/api/connections", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ°å¢æ°æ®è¿æ¥ã?    const input = normalizeConnectionInput(connectionSchema.parse(request.body));
+    const input = normalizeConnectionInput(connectionSchema.parse(request.body));
     const store = await loadStore();
     const connection = { id: randomUUID(), createdAt: new Date().toISOString(), ...input };
     store.connections.push(connection);
@@ -1268,7 +1268,7 @@ app.post("/api/connections", async (request, response, next) => {
 
 app.put("/api/connections/:id", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ´æ°æ°æ®è¿æ¥ã?    const store = await loadStore();
+    const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
     const input = normalizeConnectionInput(connectionUpdateSchema.parse(request.body), connection);
     const nextConnection = {
@@ -1287,7 +1287,7 @@ app.put("/api/connections/:id", async (request, response, next) => {
 
 app.delete("/api/connections/:id", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼å é¤æ°æ®è¿æ¥åå¶å³èç¥è¯ã?    const store = await loadStore();
+    const store = await loadStore();
     requireConnection(store, request.params.id);
     store.connections = store.connections.filter((item) => item.id !== request.params.id);
     store.annotations = store.annotations.filter((item) => item.connectionId !== request.params.id);
@@ -1302,7 +1302,7 @@ app.delete("/api/connections/:id", async (request, response, next) => {
 
 app.post("/api/connections/:id/test", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æµè¯è¿æ¥æ¯å¦å¯ç¨ã?    const store = await loadStore();
+    const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
     await withClient(connection, (client) => client.query("SELECT 1"));
     response.json({ ok: true });
@@ -1313,7 +1313,7 @@ app.post("/api/connections/:id/test", async (request, response, next) => {
 
 app.get("/api/connections/:id/schema", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æåè¿æ¥çå®æ?schemaï¼å¹¶ç¼å­å¿«ç§ã?    const store = await loadStore();
+    const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
     try {
       const rows = await introspectSchema(connection);
@@ -1338,7 +1338,7 @@ app.get("/api/connections/:id/schema", async (request, response, next) => {
 
 app.post("/api/connections/:id/schema/import", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æå¨å¯¼å¥ schema å¿«ç§ã?    const input = schemaImportSchema.parse(request.body);
+    const input = schemaImportSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
     const snapshot = saveSchemaSnapshot(store, connection.id, input.tables, "manual-import");
@@ -1351,7 +1351,7 @@ app.post("/api/connections/:id/schema/import", async (request, response, next) =
 
 app.get("/api/annotations", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ¥è¯¢æ³¨éåè¡¨ï¼å¯æè¿æ¥è¿æ»¤ã?    const store = await loadStore();
+    const store = await loadStore();
     const connectionId = request.query.connectionId;
     response.json(connectionId ? store.annotations.filter((item) => item.connectionId === connectionId) : store.annotations);
   } catch (error) {
@@ -1361,7 +1361,7 @@ app.get("/api/annotations", async (request, response, next) => {
 
 app.post("/api/annotations", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ°å¢ç¥è¯æ³¨éã?    const input = annotationSchema.parse(request.body);
+    const input = annotationSchema.parse(request.body);
     const store = await loadStore();
     requireConnection(store, input.connectionId);
     const annotation = { id: randomUUID(), updatedAt: new Date().toISOString(), ...input };
@@ -1376,7 +1376,7 @@ app.post("/api/annotations", async (request, response, next) => {
 
 app.put("/api/annotations/:id", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ´æ°ç¥è¯æ³¨éã?    const input = annotationUpdateSchema.parse(request.body);
+    const input = annotationUpdateSchema.parse(request.body);
     const store = await loadStore();
     const annotation = requireAnnotation(store, request.params.id);
     Object.assign(annotation, input, { updatedAt: new Date().toISOString() });
@@ -1390,7 +1390,7 @@ app.put("/api/annotations/:id", async (request, response, next) => {
 
 app.delete("/api/annotations/:id", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼å é¤ç¥è¯æ³¨éã?    const store = await loadStore();
+    const store = await loadStore();
     requireAnnotation(store, request.params.id);
     store.annotations = store.annotations.filter((item) => item.id !== request.params.id);
     await saveStore(store);
@@ -1402,7 +1402,7 @@ app.delete("/api/annotations/:id", async (request, response, next) => {
 
 app.post("/api/ai/annotations/suggest", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ ¹æ®ç®æ è·¯å¾åæ ·æ¬å¼çææ³¨éå»ºè®®ã?    const input = annotationSuggestSchema.parse(request.body);
+    const input = annotationSuggestSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, input.connectionId);
     const pathParts = input.targetPath.toLowerCase().split(".");
@@ -1421,7 +1421,7 @@ app.post("/api/ai/annotations/suggest", async (request, response, next) => {
 
 app.post("/api/ai/annotations/suggest-missing", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼ä¸ºç¼ºå¤±å­æ®µæ¹éçææ³¨éå»ºè®®ã?    const input = missingAnnotationSuggestSchema.parse(request.body);
+    const input = missingAnnotationSuggestSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, input.connectionId);
     const missingPaths = missingColumnPathsForConnection(store, connection.id, input.scope).slice(0, input.limit);
@@ -1450,7 +1450,7 @@ app.post("/api/ai/annotations/suggest-missing", async (request, response, next) 
 
 app.post("/api/ai/schema-context/annotate", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼åºäº schema ä¸ä¸æçææ³¨éå»ºè®®ã?    const input = schemaContextAnnotateSchema.parse(request.body);
+    const input = schemaContextAnnotateSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, input.connectionId);
     const suggested = await suggestAnnotationsFromSchemaContext(connection, input, store);
@@ -1480,7 +1480,7 @@ app.post("/api/ai/schema-context/annotate", async (request, response, next) => {
 
 app.post("/api/sql/validate", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ ¡éªåªè¯» SQL å¹¶è¿åæ§è¡ç­ç¥ã?    const store = await loadStore();
+    const store = await loadStore();
     const connection = request.body.connectionId
       ? requireConnection(store, request.body.connectionId)
       : { type: request.body.type && dbTypes.includes(request.body.type) ? request.body.type : "postgres" };
@@ -1493,7 +1493,7 @@ app.post("/api/sql/validate", async (request, response, next) => {
 
 app.post("/api/sql/run", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ§è¡åªè¯» SQL å¹¶è®°å½å®¡è®¡æ¥å¿ã?    const store = await loadStore();
+    const store = await loadStore();
     const connection = requireConnection(store, request.body.connectionId);
     const schemaTables = getSchemaSnapshot(store, connection.id)?.tables ?? [];
     const policy = analyzeSqlPolicy(String(request.body.sql ?? ""), connection, schemaTables, Number(request.body.maxRows ?? 100));
@@ -1517,7 +1517,7 @@ app.post("/api/sql/run", async (request, response, next) => {
 
 app.post("/api/ai/sql/generate", async (request, response, next) => {
   try {
-    // æ¥å£ç¨éï¼æ ¹æ®é®é¢ãschema åæ³¨éçæ?SQLã?    const store = await loadStore();
+    const store = await loadStore();
     const connection = requireConnection(store, request.body.connectionId);
     const annotations = store.annotations.filter((item) => item.connectionId === connection.id);
     let schema = getSchemaSnapshot(store, connection.id)?.tables ?? [];

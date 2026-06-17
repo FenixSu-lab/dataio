@@ -28,6 +28,20 @@ const moduleTitles = {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
+function showPageStatus(message) {
+  const node = $("#page-status");
+  if (!node) return;
+  node.textContent = message;
+  node.classList.remove("hidden");
+}
+
+function clearPageStatus() {
+  const node = $("#page-status");
+  if (!node) return;
+  node.textContent = "";
+  node.classList.add("hidden");
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -357,11 +371,25 @@ async function loadCoverage() {
 }
 
 async function refreshKnowledgeViews() {
-  await loadConnections();
-  await loadAnnotations();
-  await loadAudits();
-  await loadCoverage();
-  await loadAiSettings();
+  const failures = [];
+  for (const [label, loader] of [
+    ["连接列表", loadConnections],
+    ["标注列表", loadAnnotations],
+    ["审计列表", loadAudits],
+    ["覆盖率", loadCoverage],
+    ["AI 配置", loadAiSettings]
+  ]) {
+    try {
+      await loader();
+    } catch (error) {
+      failures.push(`${label}: ${error.message}`);
+    }
+  }
+  if (failures.length) {
+    showPageStatus(`页面部分数据加载失败：${failures.join("；")}`);
+  } else {
+    clearPageStatus();
+  }
 }
 
 async function loadAiSettings() {
@@ -837,4 +865,8 @@ $("#import-catalog").addEventListener("click", async () => {
   }
 });
 
-await refreshKnowledgeViews();
+try {
+  await refreshKnowledgeViews();
+} catch (error) {
+  showPageStatus(`页面初始化失败：${error.message}`);
+}
