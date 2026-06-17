@@ -9,6 +9,12 @@ let connectionPage = 1;
 let annotationPage = 1;
 let auditPage = 1;
 const listPageSize = 10;
+const driverOptions = {
+  mysql: [{ value: "mysql2", label: "MySQL · mysql2" }],
+  postgres: [{ value: "pg", label: "Postgres · pg" }],
+  sqlserver: [{ value: "mssql", label: "SQL Server · mssql" }]
+};
+const defaultPorts = { mysql: 3306, postgres: 5432, sqlserver: 1433 };
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -29,6 +35,19 @@ async function api(path, options = {}) {
 
 function formJson(form) {
   return Object.fromEntries(new FormData(form).entries());
+}
+
+function syncConnectionDriver(type, selectedDriver = null) {
+  const form = $("#connection-form");
+  const driverSelect = form.elements.driver;
+  const options = driverOptions[type] ?? [];
+  driverSelect.innerHTML = options.map((option) => `<option value="${option.value}">${option.label}</option>`).join("");
+  driverSelect.value = selectedDriver && options.some((option) => option.value === selectedDriver)
+    ? selectedDriver
+    : options[0]?.value ?? "";
+  if (!form.elements.port.value || Object.values(defaultPorts).includes(Number(form.elements.port.value))) {
+    form.elements.port.value = defaultPorts[type] ?? "";
+  }
 }
 
 function renderJson(target, data) {
@@ -274,6 +293,9 @@ async function refreshKnowledgeViews() {
 async function loadAiSettings() {
   const settings = await api("/api/settings/ai");
   $("#ai-settings-status").textContent = JSON.stringify(settings, null, 2);
+  $("#ai-system-prompt-status").textContent = settings.systemPrompt?.configured
+    ? `ModelOps 系统提示已启用：${settings.systemPrompt.path}`
+    : "ModelOps 系统提示未配置。";
   const container = $("#ai-profiles");
   container.innerHTML = "";
   for (const profile of settings.profiles) {
@@ -306,6 +328,8 @@ async function loadSchema(connectionId) {
 $$("[data-module-tab]").forEach((tab) => {
   tab.addEventListener("click", () => switchModule(tab.dataset.moduleTab));
 });
+
+syncConnectionDriver($("#connection-form").elements.type.value);
 
 $("#schema-filter").addEventListener("input", () => {
   schemaPage = 1;
@@ -475,6 +499,10 @@ $("#connection-form").addEventListener("submit", async (event) => {
   }
 });
 
+$("#connection-form").elements.type.addEventListener("change", (event) => {
+  syncConnectionDriver(event.target.value);
+});
+
 $("#annotation-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!selectedConnectionId) return alert("请先选择一个数据库连接");
@@ -582,6 +610,10 @@ $("#connections").addEventListener("click", async (event) => {
       if (!connection) return alert("连接不存在");
       const name = prompt("连接名称", connection.name);
       if (!name) return;
+      const type = prompt("Database type: mysql / postgres / sqlserver", connection.type);
+      if (!type || !driverOptions[type]) return alert("Unsupported database type");
+      const driver = prompt(`Driver: ${driverOptions[type].map((option) => option.value).join(" / ")}`, connection.driver || driverOptions[type][0].value);
+      if (!driverOptions[type].some((option) => option.value === driver)) return alert("Unsupported driver");
       const host = prompt("Host", connection.host);
       if (!host) return;
       const port = Number(prompt("Port", connection.port));
@@ -591,7 +623,7 @@ $("#connections").addEventListener("click", async (event) => {
       const note = prompt("备注", connection.note ?? "") ?? "";
       await api(`/api/connections/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ name, host, port, database, note })
+        body: JSON.stringify({ name, type, driver, host, port, database, note })
       });
       await refreshKnowledgeViews();
     }

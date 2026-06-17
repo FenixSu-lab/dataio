@@ -62,6 +62,11 @@
               <option value="postgres">Postgres</option>
               <option value="sqlserver">SQL Server</option>
             </select>
+            <select name="driver">
+              <option value="mysql2" data-type="mysql">MySQL · mysql2</option>
+              <option value="pg" data-type="postgres">Postgres · pg</option>
+              <option value="mssql" data-type="sqlserver">SQL Server · mssql</option>
+            </select>
             <select name="businessSystem">
               <option>ERP</option><option>MES</option><option>PLM</option><option>CRM</option><option>SRM</option><option>OTHER</option>
             </select>
@@ -172,6 +177,7 @@
             <button id="reset-ai-form" type="button" class="secondary">新建配置</button>
           </form>
           <div id="ai-profiles" class="list"></div>
+          <p id="ai-system-prompt-status" class="hint"></p>
           <pre id="ai-settings-status"></pre>
         </section>
       </section>

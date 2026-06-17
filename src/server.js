@@ -3,32 +3,65 @@ import express from "express";
 import sqlParser from "node-sql-parser";
 import OpenAI from "openai";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { currentPrincipal, requirePermission } from "./auth.js";
+
+/**
+ * 作�? 苏延�? * 时间: 2026-03-18 10:41:59
+ * 功能: 提供数据目录、SQL 校验执行、AI 辅助和元数据管理接口
+ */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const dataDir = path.join(rootDir, "data");
+const configDir = path.join(rootDir, "config");
+const logDir = path.join(rootDir, "logs");
+
+// �̶�·�����ü��й��������ں���Ǩ�Ƶ��ⲿ����Ŀ¼����������
 const storePath = process.env.DATAIO_STORE_PATH
   ? path.resolve(process.env.DATAIO_STORE_PATH)
   : path.join(dataDir, "catalog.json");
+const aiSystemPromptPath = process.env.DATAIO_AI_SYSTEM_PROMPT_PATH
+  ? path.resolve(process.env.DATAIO_AI_SYSTEM_PROMPT_PATH)
+  : path.join(configDir, "modelops-system-prompt.md");
+const modelOpsConfigPath = process.env.DATAIO_MODELOPS_CONFIG_PATH
+  ? path.resolve(process.env.DATAIO_MODELOPS_CONFIG_PATH)
+  : path.join(configDir, "modelops.json");
+const runtimeLogPath = process.env.DATAIO_RUNTIME_LOG_PATH
+  ? path.resolve(process.env.DATAIO_RUNTIME_LOG_PATH)
+  : path.join(logDir, "runtime.log");
 const { Parser } = sqlParser;
 const parser = new Parser();
 
 const app = express();
+// �����м����CORS��JSON �����;�̬��Դ����
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(rootDir, "public")));
+// �ӿ�Ȩ�޲��ԣ���·���ͷ���ӳ�䵽��ͬ������Ŀ¼/����Ȩ�ޡ�
+app.use("/api", requirePermission((request) => {
+  if (request.path === "/me") return "dataio.app.access";
+  if (request.path.startsWith("/settings/ai")) return "dataio.ai-config.manage";
+  if (request.path.startsWith("/sql/") || request.path.startsWith("/ai/sql/")) return "dataio.query.execute";
+  if (request.path.startsWith("/connections") && request.method !== "GET") return "dataio.connection.manage";
+  if (request.method === "GET") return "dataio.catalog.read";
+  return "dataio.catalog.manage";
+}, { bypass: (request) => request.path === "/health" }));
+// �ӿ���;�����ص�ǰ��¼������Ϣ��
+app.get("/api/me", (request, response) => response.json({ user: currentPrincipal(request) }));
 
+// ����Դ���͡�����ӳ���ҵ��ϵͳö�����ڹ̶����ã������������ڼ�顣
 const dbTypes = ["mysql", "postgres", "sqlserver"];
+const dbDrivers = {
+  mysql: ["mysql2"],
+  postgres: ["pg"],
+  sqlserver: ["mssql"]
+};
 const businessSystems = ["ERP", "MES", "PLM", "CRM", "SRM", "OTHER"];
 const sensitiveColumnPattern = /(phone|mobile|tel|email|id_card|card|bank|salary|身份证|手机号|电话|邮箱|银行|工资)/i;
-
-const connectionSchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(dbTypes),
   businessSystem: z.enum(businessSystems).default("OTHER"),
   host: z.string().min(1),
   port: z.coerce.number().int().positive(),
@@ -106,6 +139,7 @@ const catalogImportSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1),
     type: z.enum(dbTypes),
+    driver: z.string().optional(),
     businessSystem: z.enum(businessSystems),
     host: z.string().optional(),
     port: z.number().optional(),
@@ -130,11 +164,29 @@ function emptyStore() {
   return { connections: [], annotations: [], audits: [], schemaSnapshots: {}, aiSettings: null, aiProfiles: [], activeAiProfileId: null };
 }
 
+function defaultDriverForType(type) {
+  return dbDrivers[type]?.[0] ?? type;
+}
+
+function normalizeConnectionDriver(connection) {
+  const driver = connection?.driver || defaultDriverForType(connection?.type);
+  return { ...connection, driver };
+}
+
+function normalizeConnectionInput(input, existing = null) {
+  const type = input.type ?? existing?.type;
+  const driver = input.driver ?? existing?.driver ?? defaultDriverForType(type);
+  if (!dbDrivers[type]?.includes(driver)) {
+    throw badRequest(`Driver ${driver} is not supported for ${type}`);
+  }
+  return { ...input, driver };
+}
+
 function normalizeStore(store) {
   return {
     ...emptyStore(),
     ...store,
-    connections: Array.isArray(store?.connections) ? store.connections : [],
+    connections: Array.isArray(store?.connections) ? store.connections.map(normalizeConnectionDriver) : [],
     annotations: Array.isArray(store?.annotations) ? store.annotations : [],
     audits: Array.isArray(store?.audits) ? store.audits : [],
     schemaSnapshots: store?.schemaSnapshots && typeof store.schemaSnapshots === "object" ? store.schemaSnapshots : {},
@@ -192,7 +244,7 @@ function badRequest(message) {
 }
 
 function assertReadOnlySql(sql) {
-  const normalized = sql.trim().replace(/;+\s*$/g, "");
+  // SQL 校验：只允许只读语句，阻止写入和 DDL/DCL�?  const normalized = sql.trim().replace(/;+\s*$/g, "");
   if (!normalized) throw badRequest("SQL is empty");
   if (/;/.test(normalized)) throw badRequest("Only one SQL statement is allowed");
   if (!/^(select|with|show|desc|describe|explain)\b/i.test(normalized)) {
@@ -285,10 +337,10 @@ function analyzeSqlPolicy(sql, connection, schemaTables = [], maxRows = 100) {
   const schemaColumns = collectSchemaColumns(schemaTables);
   const maskedColumns = [...schemaColumns].filter((column) => sensitiveColumnPattern.test(column)).sort();
   const warnings = [];
-  if (finalSql !== readonlySql) warnings.push(`已自动限制最多返回 ${Math.max(1, Math.min(Number(maxRows) || 100, 1000))} 行`);
-  if (!referencedTables.length) warnings.push("未能从 SQL 中识别出表名，请人工确认查询范围");
+  if (finalSql !== readonlySql) warnings.push(`已自动限制最多返�?${Math.max(1, Math.min(Number(maxRows) || 100, 1000))} 行`);
+  if (!referencedTables.length) warnings.push("未能�?SQL 中识别出表名，请人工确认查询范围");
   if (unknownTables.length) warnings.push(`SQL 引用了快照中不存在的表：${unknownTables.join(", ")}`);
-  if (maskedColumns.length) warnings.push(`命中敏感字段规则，结果会按字段名脱敏：${maskedColumns.slice(0, 20).join(", ")}`);
+  if (maskedColumns.length) warnings.push(`命中敏感字段规则，结果会按字段名脱敏�?{maskedColumns.slice(0, 20).join(", ")}`);
   return {
     ok: true,
     mode: "read-only",
@@ -304,7 +356,7 @@ function analyzeSqlPolicy(sql, connection, schemaTables = [], maxRows = 100) {
 }
 
 function ensureLimit(sql, type, maxRows = 100) {
-  const normalized = sql.trim().replace(/;+\s*$/g, "");
+  // SQL 限流：避免未带分页的查询一次性返回过多数据�?  const normalized = sql.trim().replace(/;+\s*$/g, "");
   const safeMaxRows = Math.max(1, Math.min(Number(maxRows) || 100, 1000));
   if (/\blimit\s+\d+\b/i.test(normalized) || /\btop\s+\d+\b/i.test(normalized) || /\boffset\s+\d+\s+rows\b/i.test(normalized)) {
     return normalized;
@@ -341,12 +393,213 @@ function getAiConfig(store) {
   return {
     apiKey,
     baseURL: settings?.baseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-    model: settings?.model || process.env.OPENAI_MODEL || "gpt-4o-mini"
+    model: settings?.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
+    provider: settings?.provider || process.env.OPENAI_PROVIDER || "openai-compatible"
   };
 }
 
 function createOpenAIClient(aiConfig) {
   return new OpenAI({ apiKey: aiConfig.apiKey, baseURL: aiConfig.baseURL });
+}
+
+function runtimeLog(event, fields = {}) {
+  const line = JSON.stringify({
+    time: new Date().toISOString(),
+    event,
+    ...fields
+  });
+  console.log(line);
+  // 后台运行时日志：同时输出到控制台和文件，便于排查�?  void mkdir(path.dirname(runtimeLogPath), { recursive: true })
+    .then(() => appendFile(runtimeLogPath, `${line}\n`, "utf8"))
+    .catch((error) => console.error(`runtime log write failed: ${error.message}`));
+}
+
+async function loadAiSystemPrompt() {
+  try {
+    return (await readFile(aiSystemPromptPath, "utf8")).trim();
+  } catch {
+    return "";
+  }
+}
+
+async function loadModelOpsConfig() {
+  const defaults = {
+    enabled: false,
+    endpoint: "http://localhost:3001/api/task-runs",
+    modelId: "mdl_deepseek-deepseek-v4-pro_9fmnwH",
+    owner: "DataIO",
+    timeoutMs: 3000,
+    failureMode: "warn",
+    qualityScore: null,
+    metadata: {}
+  };
+  let fileConfig = {};
+  try {
+    fileConfig = JSON.parse(await readFile(modelOpsConfigPath, "utf8"));
+  } catch {
+    fileConfig = {};
+  }
+  return {
+    ...defaults,
+    ...fileConfig,
+    enabled: process.env.DATAIO_MODELOPS_ENABLED
+      ? process.env.DATAIO_MODELOPS_ENABLED === "true"
+      : Boolean(fileConfig.enabled ?? defaults.enabled),
+    endpoint: process.env.DATAIO_MODELOPS_ENDPOINT || fileConfig.endpoint || defaults.endpoint,
+    modelId: process.env.DATAIO_MODELOPS_MODEL_ID || fileConfig.modelId || defaults.modelId,
+    owner: process.env.DATAIO_MODELOPS_OWNER || fileConfig.owner || defaults.owner,
+    timeoutMs: Number(process.env.DATAIO_MODELOPS_TIMEOUT_MS || fileConfig.timeoutMs || defaults.timeoutMs),
+    failureMode: process.env.DATAIO_MODELOPS_FAILURE_MODE || fileConfig.failureMode || defaults.failureMode,
+    metadata: fileConfig.metadata && typeof fileConfig.metadata === "object" ? fileConfig.metadata : {}
+  };
+}
+
+function completionUsage(completion) {
+  return {
+    inputTokens: Number(completion?.usage?.prompt_tokens ?? completion?.usage?.input_tokens ?? 0),
+    outputTokens: Number(completion?.usage?.completion_tokens ?? completion?.usage?.output_tokens ?? 0)
+  };
+}
+
+async function reportModelOpsTask(payload) {
+  const config = await loadModelOpsConfig();
+  if (!config.enabled) {
+    runtimeLog("modelops_report_skipped", {
+      taskName: payload.taskName,
+      status: payload.status,
+      reason: "disabled"
+    });
+    return { reported: false, reason: "disabled" };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1, config.timeoutMs));
+  const body = {
+    modelId: config.modelId,
+    taskName: payload.taskName,
+    taskType: payload.taskType,
+    owner: config.owner,
+    status: payload.status,
+    durationMs: payload.durationMs,
+    inputTokens: payload.inputTokens ?? 0,
+    outputTokens: payload.outputTokens ?? 0,
+    ...(config.qualityScore == null ? {} : { qualityScore: config.qualityScore }),
+    ...(payload.errorMessage ? { errorMessage: payload.errorMessage } : {}),
+    metadata: {
+      ...config.metadata,
+      ...(payload.metadata ?? {})
+    }
+  };
+  runtimeLog("modelops_report_start", {
+    endpoint: config.endpoint,
+    modelId: config.modelId,
+    taskName: body.taskName,
+    taskType: body.taskType,
+    status: body.status,
+    durationMs: body.durationMs,
+    inputTokens: body.inputTokens,
+    outputTokens: body.outputTokens,
+    traceId: body.metadata?.traceId
+  });
+  try {
+    const result = await fetch(config.endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(process.env.DATAIO_MODELOPS_API_KEY ? { "x-api-key": process.env.DATAIO_MODELOPS_API_KEY } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    if (!result.ok) throw new Error(`HTTP ${result.status}`);
+    runtimeLog("modelops_report_success", {
+      endpoint: config.endpoint,
+      taskName: body.taskName,
+      status: body.status,
+      httpStatus: result.status,
+      traceId: body.metadata?.traceId
+    });
+    return { reported: true };
+  } catch (error) {
+    const message = `ModelOps report failed: ${error.message}`;
+    runtimeLog("modelops_report_failed", {
+      endpoint: config.endpoint,
+      taskName: body.taskName,
+      status: body.status,
+      failureMode: config.failureMode,
+      errorMessage: error.message,
+      traceId: body.metadata?.traceId
+    });
+    if (config.failureMode === "block") throw new Error(message);
+    console.warn(message);
+    return { reported: false, reason: error.message };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function runAiTask(task, callback) {
+  const startedAt = Date.now();
+  const metadata = {
+    traceId: randomUUID(),
+    model: task.model,
+    provider: task.provider,
+    baseURL: task.baseURL
+  };
+  runtimeLog("ai_task_start", {
+    taskName: task.taskName,
+    taskType: task.taskType,
+    model: task.model,
+    provider: task.provider,
+    baseURL: task.baseURL,
+    traceId: metadata.traceId
+  });
+  try {
+    const completion = await callback();
+    const usage = completionUsage(completion);
+    const durationMs = Date.now() - startedAt;
+    runtimeLog("ai_task_success", {
+      taskName: task.taskName,
+      durationMs,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      traceId: metadata.traceId
+    });
+    await reportModelOpsTask({
+      ...task,
+      ...usage,
+      status: "success",
+      durationMs,
+      metadata
+    });
+    return completion;
+  } catch (error) {
+    if (error.message?.startsWith("ModelOps report failed:")) throw error;
+    const durationMs = Date.now() - startedAt;
+    runtimeLog("ai_task_failed", {
+      taskName: task.taskName,
+      durationMs,
+      errorMessage: error.message,
+      traceId: metadata.traceId
+    });
+    await reportModelOpsTask({
+      ...task,
+      status: error.name === "AbortError" ? "timeout" : "failed",
+      durationMs,
+      inputTokens: 0,
+      outputTokens: 0,
+      errorMessage: error.message,
+      metadata
+    });
+    throw error;
+  }
+}
+
+async function aiMessages(userContent) {
+  const systemPrompt = await loadAiSystemPrompt();
+  return [
+    ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+    { role: "user", content: userContent }
+  ];
 }
 
 function humanizeIdentifier(identifier) {
@@ -365,7 +618,7 @@ function humanizeIdentifier(identifier) {
     ["name", "名称"],
     ["desc", "描述"],
     ["type", "类型"],
-    ["status", "状态"],
+    ["status", "状�?],
     ["date", "日期"],
     ["time", "时间"],
     ["created", "创建"],
@@ -374,14 +627,14 @@ function humanizeIdentifier(identifier) {
     ["update", "更新"],
     ["customer", "客户"],
     ["cust", "客户"],
-    ["supplier", "供应商"],
-    ["vendor", "供应商"],
+    ["supplier", "供应�?],
+    ["vendor", "供应�?],
     ["material", "物料"],
     ["item", "物料"],
     ["product", "产品"],
     ["order", "订单"],
-    ["sale", "销售"],
-    ["sales", "销售"],
+    ["sale", "销�?],
+    ["sales", "销�?],
     ["purchase", "采购"],
     ["qty", "数量"],
     ["quantity", "数量"],
@@ -390,9 +643,9 @@ function humanizeIdentifier(identifier) {
     ["dept", "部门"],
     ["org", "组织"],
     ["user", "用户"],
-    ["owner", "负责人"],
+    ["owner", "负责�?],
     ["phone", "电话"],
-    ["mobile", "手机号"],
+    ["mobile", "手机�?],
     ["email", "邮箱"]
   ]);
   return normalized
@@ -405,12 +658,12 @@ function humanizeIdentifier(identifier) {
 function fallbackAnnotationSuggestion(connection, input, relatedAnnotations) {
   const title = humanizeIdentifier(input.targetPath);
   const context = relatedAnnotations.length
-    ? `已有关联标注：${relatedAnnotations.slice(0, 3).map((item) => item.title).join("、")}。`
-    : "暂无关联标注。";
-  const sampleText = input.sampleValues.length ? `样例值：${input.sampleValues.slice(0, 5).join("、")}。` : "";
+    ? `已有关联标注�?{relatedAnnotations.slice(0, 3).map((item) => item.title).join("�?)}。`
+    : "暂无关联标注�?;
+  const sampleText = input.sampleValues.length ? `样例值：${input.sampleValues.slice(0, 5).join("�?)}。` : "";
   const typeText = {
-    database: "数据库",
-    table: "业务表",
+    database: "数据�?,
+    table: "业务�?,
     column: "字段",
     enum: "枚举",
     join: "常用关联关系",
@@ -420,7 +673,7 @@ function fallbackAnnotationSuggestion(connection, input, relatedAnnotations) {
     targetType: input.targetType,
     targetPath: input.targetPath,
     title,
-    description: `${typeText}“${input.targetPath}”建议标注为“${title}”。请结合 ${connection.businessSystem} 业务场景补充来源系统、业务含义、取值范围和使用注意事项。${sampleText}${context}`,
+    description: `${typeText}�?{input.targetPath}”建议标注为�?{title}”。请结合 ${connection.businessSystem} 业务场景补充来源系统、业务含义、取值范围和使用注意事项�?{sampleText}${context}`,
     tags: [connection.businessSystem, input.targetType, title].filter(Boolean),
     confidence: relatedAnnotations.length ? "medium" : "low",
     source: "rule-fallback"
@@ -429,17 +682,17 @@ function fallbackAnnotationSuggestion(connection, input, relatedAnnotations) {
 
 function buildAnnotationPrompt(connection, input, relatedAnnotations) {
   return [
-    "你是企业数据字典专家，任务是为数据库对象生成中文业务标注建议。",
-    "输出 JSON，不要 Markdown。字段包括 title、description、tags、confidence。",
-    `业务系统：${connection.businessSystem}`,
+    "你是企业数据字典专家，任务是为数据库对象生成中文业务标注建议�?,
+    "输出 JSON，不�?Markdown。字段包�?title、description、tags、confidence�?,
+    `业务系统�?{connection.businessSystem}`,
     `数据库类型：${connection.type}`,
     `数据库：${connection.database}`,
-    `对象类型：${input.targetType}`,
-    `对象路径：${input.targetPath}`,
-    `样例值：${input.sampleValues.join("、") || "无"}`,
-    "相关已有标注：",
-    relatedAnnotations.map((item) => `${item.targetType} ${item.targetPath}: ${item.description}`).join("\n") || "无",
-    "要求：中文、简洁、面向 ERP/MES/PLM/CRM/SRM 业务用户，说明业务含义、可能枚举或关联关系。"
+    `对象类型�?{input.targetType}`,
+    `对象路径�?{input.targetPath}`,
+    `样例值：${input.sampleValues.join("�?) || "�?}`,
+    "相关已有标注�?,
+    relatedAnnotations.map((item) => `${item.targetType} ${item.targetPath}: ${item.description}`).join("\n") || "�?,
+    "要求：中文、简洁、面�?ERP/MES/PLM/CRM/SRM 业务用户，说明业务含义、可能枚举或关联关系�?
   ].join("\n");
 }
 
@@ -457,14 +710,14 @@ function fallbackSchemaContextAnnotations(connection, input) {
         targetType: "table",
         targetPath: input.targetPath,
         title: tableTitle,
-        description: `根据粘贴的模型/Schema 内容推断：${input.targetPath} 是 ${connection.businessSystem} 业务表。请结合业务补充表用途、数据来源和使用边界。`,
-        tags: [connection.businessSystem, "表说明"]
+        description: `根据粘贴的模�?Schema 内容推断�?{input.targetPath} �?${connection.businessSystem} 业务表。请结合业务补充表用途、数据来源和使用边界。`,
+        tags: [connection.businessSystem, "表说�?]
       },
       ...uniqueColumns.map((column) => ({
         targetType: "column",
         targetPath: `${input.targetPath}.${column}`,
         title: humanizeIdentifier(column),
-        description: `根据模型/Schema 内容推断字段“${column}”的业务含义。请结合代码注释、verbose_name、choices 或 help_text 完善说明。`,
+        description: `根据模型/Schema 内容推断字段�?{column}”的业务含义。请结合代码注释、verbose_name、choices �?help_text 完善说明。`,
         tags: [connection.businessSystem, "AI建议"]
       }))
     ]
@@ -473,13 +726,13 @@ function fallbackSchemaContextAnnotations(connection, input) {
 
 function buildSchemaContextPrompt(connection, input) {
   return [
-    "你是企业数据字典专家。用户会粘贴 Django Model、DDL、ORM 模型或其他 Schema 描述。",
-    "请从中提取表说明、关键字段说明、枚举、关联关系。只输出 JSON，不要 Markdown。",
+    "你是企业数据字典专家。用户会粘贴 Django Model、DDL、ORM 模型或其�?Schema 描述�?,
+    "请从中提取表说明、关键字段说明、枚举、关联关系。只输出 JSON，不�?Markdown�?,
     "JSON 格式：{\"annotations\":[{\"targetType\":\"table|column|enum|join|metric\",\"targetPath\":\"...\",\"title\":\"...\",\"description\":\"...\",\"tags\":[\"...\"]}]}",
-    `业务系统：${connection.businessSystem}`,
+    `业务系统�?{connection.businessSystem}`,
     `目标表路径：${input.targetPath}`,
-    "要求：不要为 id、created_at、updated_at 等低价值通用字段生成标注，优先输出业务表说明和关键业务字段。",
-    "粘贴内容：",
+    "要求：不要为 id、created_at、updated_at 等低价值通用字段生成标注，优先输出业务表说明和关键业务字段�?,
+    "粘贴内容�?,
     input.context
   ].join("\n");
 }
@@ -487,14 +740,27 @@ function buildSchemaContextPrompt(connection, input) {
 async function suggestAnnotationsFromSchemaContext(connection, input, store) {
   const fallback = fallbackSchemaContextAnnotations(connection, input);
   const aiConfig = getAiConfig(store);
-  if (!aiConfig) return fallback;
+  if (!aiConfig) {
+    runtimeLog("ai_task_skipped", {
+      taskName: "Schema context annotation",
+      reason: "missing_api_key",
+      fallback: true
+    });
+    return fallback;
+  }
   const openai = createOpenAIClient(aiConfig);
-  const completion = await openai.chat.completions.create({
+  const completion = await runAiTask({
+    taskName: "Schema context annotation",
+    taskType: "analysis",
     model: aiConfig.model,
-    temperature: 0.2,
-    messages: [{ role: "user", content: buildSchemaContextPrompt(connection, input) }],
-    response_format: { type: "json_object" }
-  });
+    provider: aiConfig.provider,
+    baseURL: aiConfig.baseURL
+  }, async () => openai.chat.completions.create({
+      model: aiConfig.model,
+      temperature: 0.2,
+      messages: await aiMessages(buildSchemaContextPrompt(connection, input)),
+      response_format: { type: "json_object" }
+    }));
   const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
   return {
     source: "openai-compatible",
@@ -505,14 +771,27 @@ async function suggestAnnotationsFromSchemaContext(connection, input, store) {
 async function suggestAnnotation(connection, input, relatedAnnotations, store = null) {
   const fallback = fallbackAnnotationSuggestion(connection, input, relatedAnnotations);
   const aiConfig = getAiConfig(store);
-  if (!aiConfig) return fallback;
+  if (!aiConfig) {
+    runtimeLog("ai_task_skipped", {
+      taskName: "Annotation suggestion",
+      reason: "missing_api_key",
+      fallback: true
+    });
+    return fallback;
+  }
   const openai = createOpenAIClient(aiConfig);
-  const completion = await openai.chat.completions.create({
+  const completion = await runAiTask({
+    taskName: "Annotation suggestion",
+    taskType: "analysis",
     model: aiConfig.model,
-    temperature: 0.2,
-    messages: [{ role: "user", content: buildAnnotationPrompt(connection, input, relatedAnnotations) }],
-    response_format: { type: "json_object" }
-  });
+    provider: aiConfig.provider,
+    baseURL: aiConfig.baseURL
+  }, async () => openai.chat.completions.create({
+      model: aiConfig.model,
+      temperature: 0.2,
+      messages: await aiMessages(buildAnnotationPrompt(connection, input, relatedAnnotations)),
+      response_format: { type: "json_object" }
+    }));
   const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
   return {
     targetType: input.targetType,
@@ -526,7 +805,9 @@ async function suggestAnnotation(connection, input, relatedAnnotations, store = 
 }
 
 async function createClient(connection) {
+  const driver = connection.driver || defaultDriverForType(connection.type);
   if (connection.type === "postgres") {
+    if (driver !== "pg") throw badRequest(`Unsupported Postgres driver: ${driver}`);
     const pg = await import("pg");
     const { Client } = pg.default ?? pg;
     const client = new Client({
@@ -544,6 +825,7 @@ async function createClient(connection) {
     };
   }
   if (connection.type === "mysql") {
+    if (driver !== "mysql2") throw badRequest(`Unsupported MySQL driver: ${driver}`);
     const mysqlModule = await import("mysql2/promise");
     const mysql = mysqlModule.default ?? mysqlModule;
     const client = await mysql.createConnection({
@@ -562,6 +844,7 @@ async function createClient(connection) {
       close: () => client.end()
     };
   }
+  if (driver !== "mssql") throw badRequest(`Unsupported SQL Server driver: ${driver}`);
   const mssql = await import("mssql");
   const sql = mssql.default ?? mssql;
   const pool = await sql.connect({
@@ -695,7 +978,7 @@ function buildCatalogSearchResults(store, query, connectionId) {
           connection: publicConnection(connection),
           title: table.table,
           path: tablePath,
-          description: `${table.columns.length} 个字段 · Schema ${snapshot.source}`,
+          description: `${table.columns.length} 个字�?· Schema ${snapshot.source}`,
           schemaSource: snapshot.source,
           refreshedAt: snapshot.refreshedAt
         });
@@ -873,7 +1156,7 @@ function validateAnnotationTarget(store, annotation) {
   const warnings = [];
   const snapshot = getSchemaSnapshot(store, annotation.connectionId);
   if (!snapshot) {
-    warnings.push("当前连接没有 Schema 快照，无法校验标注路径是否存在");
+    warnings.push("当前连接没有 Schema 快照，无法校验标注路径是否存�?);
     return warnings;
   }
   const tablePaths = new Set(snapshot.tables.map((table) => `${table.schema}.${table.table}`.toLowerCase()));
@@ -882,7 +1165,7 @@ function validateAnnotationTarget(store, annotation) {
   );
   const targetPath = annotation.targetPath.toLowerCase();
   if (annotation.targetType === "table" && !tablePaths.has(targetPath)) {
-    warnings.push(`表路径不在当前 Schema 快照中：${annotation.targetPath}`);
+    warnings.push(`表路径不在当�?Schema 快照中：${annotation.targetPath}`);
   }
   if (annotation.targetType === "column" && !columnPaths.has(targetPath)) {
     warnings.push(`字段路径不在当前 Schema 快照中：${annotation.targetPath}`);
@@ -909,15 +1192,16 @@ function importKnowledgeCatalog(store, payload) {
 
   for (const connection of input.connections) {
     if (existingConnectionIds.has(connection.id)) continue;
+    const normalizedConnection = normalizeConnectionInput(connection);
     store.connections.push({
-      ...connection,
-      host: connection.host ?? "imported.local",
-      port: connection.port ?? 0,
-      username: connection.username ?? "imported",
+      ...normalizedConnection,
+      host: normalizedConnection.host ?? "imported.local",
+      port: normalizedConnection.port ?? 0,
+      username: normalizedConnection.username ?? "imported",
       password: "",
-      ssl: connection.ssl ?? false,
-      note: connection.note ?? "Imported knowledge catalog; add real connection details before testing.",
-      createdAt: connection.createdAt ?? new Date().toISOString()
+      ssl: normalizedConnection.ssl ?? false,
+      note: normalizedConnection.note ?? "Imported knowledge catalog; add real connection details before testing.",
+      createdAt: normalizedConnection.createdAt ?? new Date().toISOString()
     });
     existingConnectionIds.add(connection.id);
     importedConnections += 1;
@@ -953,14 +1237,14 @@ function importKnowledgeCatalog(store, payload) {
 
 function buildPrompt(question, connection, schema, annotations) {
   return [
-    "你是企业业务数据库 SQL 助手，只能生成只读 SQL。",
-    `业务系统：${connection.businessSystem}，数据库类型：${connection.type}，库名：${connection.database}`,
-    `用户问题：${question}`,
+    "你是企业业务数据�?SQL 助手，只能生成只�?SQL�?,
+    `业务系统�?{connection.businessSystem}，数据库类型�?{connection.type}，库名：${connection.database}`,
+    `用户问题�?{question}`,
     "可用表字段：",
     schema.slice(0, 80).map((table) => `${table.schema}.${table.table}(${table.columns.map((col) => `${col.name}:${col.type}`).join(", ")})`).join("\n"),
-    "业务标注：",
+    "业务标注�?,
     annotations.slice(0, 80).map((item) => `${item.targetType} ${item.targetPath}: ${item.description}`).join("\n"),
-    "只返回 SQL，不要解释。禁止 INSERT/UPDATE/DELETE/DDL。"
+    "只返�?SQL，不要解释。禁�?INSERT/UPDATE/DELETE/DDL�?
   ].join("\n");
 }
 
@@ -972,15 +1256,31 @@ function fallbackSql(question, schema) {
 }
 
 app.get("/api/health", (_request, response) => {
+  // �ӿ���;���������������̽�
   response.json({ ok: true, service: "dataio", mode: "read-only" });
 });
-
 app.get("/api/settings/ai", async (_request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：查询 AI 配置、系统提示词�?ModelOps 配置�?    const store = await loadStore();
+    const systemPrompt = await loadAiSystemPrompt();
+    const modelOps = await loadModelOpsConfig();
     response.json({
       profiles: store.aiProfiles.map(publicAiSettings),
       activeProfileId: store.activeAiProfileId,
+      systemPrompt: {
+        path: aiSystemPromptPath,
+        configured: Boolean(systemPrompt),
+        length: systemPrompt.length
+      },
+      modelOps: {
+        path: modelOpsConfigPath,
+        enabled: modelOps.enabled,
+        endpoint: modelOps.endpoint,
+        modelId: modelOps.modelId,
+        owner: modelOps.owner,
+        timeoutMs: modelOps.timeoutMs,
+        failureMode: modelOps.failureMode
+      },
       envFallback: {
         provider: "env",
         baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
@@ -995,7 +1295,7 @@ app.get("/api/settings/ai", async (_request, response, next) => {
 
 app.post("/api/settings/ai", async (request, response, next) => {
   try {
-    const input = aiSettingsSchema.parse(request.body);
+    // 接口用途：新增 AI 配置档案�?    const input = aiSettingsSchema.parse(request.body);
     const store = await loadStore();
     const profile = {
       id: input.id || randomUUID(),
@@ -1016,7 +1316,7 @@ app.post("/api/settings/ai", async (request, response, next) => {
 
 app.put("/api/settings/ai/:id", async (request, response, next) => {
   try {
-    const input = aiSettingsSchema.partial().parse(request.body);
+    // 接口用途：更新 AI 配置档案�?    const input = aiSettingsSchema.partial().parse(request.body);
     const store = await loadStore();
     const profile = store.aiProfiles.find((item) => item.id === request.params.id);
     if (!profile) {
@@ -1034,7 +1334,7 @@ app.put("/api/settings/ai/:id", async (request, response, next) => {
 
 app.delete("/api/settings/ai/:id", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：删除 AI 配置档案�?    const store = await loadStore();
     store.aiProfiles = store.aiProfiles.filter((profile) => profile.id !== request.params.id);
     if (store.activeAiProfileId === request.params.id) {
       store.activeAiProfileId = store.aiProfiles[0]?.id ?? null;
@@ -1048,7 +1348,7 @@ app.delete("/api/settings/ai/:id", async (request, response, next) => {
 
 app.post("/api/settings/ai/:id/activate", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：切换当前激活的 AI 配置档案�?    const store = await loadStore();
     const profile = store.aiProfiles.find((item) => item.id === request.params.id);
     if (!profile) {
       const error = new Error("AI profile not found");
@@ -1065,7 +1365,7 @@ app.post("/api/settings/ai/:id/activate", async (request, response, next) => {
 
 app.get("/api/catalog/search", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：按关键词搜索数据目录中的表与字段�?    const store = await loadStore();
     response.json({
       query: String(request.query.q ?? ""),
       results: buildCatalogSearchResults(store, request.query.q, request.query.connectionId)
@@ -1077,7 +1377,7 @@ app.get("/api/catalog/search", async (request, response, next) => {
 
 app.get("/api/catalog/coverage", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：生成目录覆盖率报告�?    const store = await loadStore();
     const scope = request.query.scope === "key" ? "key" : "all";
     response.json({ reports: buildCoverageReport(store, request.query.connectionId, scope) });
   } catch (error) {
@@ -1087,7 +1387,7 @@ app.get("/api/catalog/coverage", async (request, response, next) => {
 
 app.get("/api/catalog/export", async (_request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：导出当前目录知识库�?    const store = await loadStore();
     response.json(exportKnowledgeCatalog(store));
   } catch (error) {
     next(error);
@@ -1096,7 +1396,7 @@ app.get("/api/catalog/export", async (_request, response, next) => {
 
 app.post("/api/catalog/import", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：导入外部目录知识库�?    const store = await loadStore();
     const summary = importKnowledgeCatalog(store, request.body);
     await saveStore(store);
     response.status(201).json({ ok: true, ...summary });
@@ -1107,7 +1407,7 @@ app.post("/api/catalog/import", async (request, response, next) => {
 
 app.get("/api/connections", async (_request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：列出全部数据连接�?    const store = await loadStore();
     response.json(store.connections.map(publicConnection));
   } catch (error) {
     next(error);
@@ -1116,7 +1416,7 @@ app.get("/api/connections", async (_request, response, next) => {
 
 app.post("/api/connections", async (request, response, next) => {
   try {
-    const input = connectionSchema.parse(request.body);
+    // 接口用途：新增数据连接�?    const input = normalizeConnectionInput(connectionSchema.parse(request.body));
     const store = await loadStore();
     const connection = { id: randomUUID(), createdAt: new Date().toISOString(), ...input };
     store.connections.push(connection);
@@ -1129,9 +1429,9 @@ app.post("/api/connections", async (request, response, next) => {
 
 app.put("/api/connections/:id", async (request, response, next) => {
   try {
-    const input = connectionUpdateSchema.parse(request.body);
-    const store = await loadStore();
+    // 接口用途：更新数据连接�?    const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
+    const input = normalizeConnectionInput(connectionUpdateSchema.parse(request.body), connection);
     const nextConnection = {
       ...connection,
       ...input,
@@ -1148,7 +1448,7 @@ app.put("/api/connections/:id", async (request, response, next) => {
 
 app.delete("/api/connections/:id", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：删除数据连接及其关联知识�?    const store = await loadStore();
     requireConnection(store, request.params.id);
     store.connections = store.connections.filter((item) => item.id !== request.params.id);
     store.annotations = store.annotations.filter((item) => item.connectionId !== request.params.id);
@@ -1163,7 +1463,7 @@ app.delete("/api/connections/:id", async (request, response, next) => {
 
 app.post("/api/connections/:id/test", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：测试连接是否可用�?    const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
     await withClient(connection, (client) => client.query("SELECT 1"));
     response.json({ ok: true });
@@ -1174,7 +1474,7 @@ app.post("/api/connections/:id/test", async (request, response, next) => {
 
 app.get("/api/connections/:id/schema", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：拉取连接的实�?schema，并缓存快照�?    const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
     try {
       const rows = await introspectSchema(connection);
@@ -1199,7 +1499,7 @@ app.get("/api/connections/:id/schema", async (request, response, next) => {
 
 app.post("/api/connections/:id/schema/import", async (request, response, next) => {
   try {
-    const input = schemaImportSchema.parse(request.body);
+    // 接口用途：手动导入 schema 快照�?    const input = schemaImportSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, request.params.id);
     const snapshot = saveSchemaSnapshot(store, connection.id, input.tables, "manual-import");
@@ -1212,7 +1512,7 @@ app.post("/api/connections/:id/schema/import", async (request, response, next) =
 
 app.get("/api/annotations", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：查询注释列表，可按连接过滤�?    const store = await loadStore();
     const connectionId = request.query.connectionId;
     response.json(connectionId ? store.annotations.filter((item) => item.connectionId === connectionId) : store.annotations);
   } catch (error) {
@@ -1222,7 +1522,7 @@ app.get("/api/annotations", async (request, response, next) => {
 
 app.post("/api/annotations", async (request, response, next) => {
   try {
-    const input = annotationSchema.parse(request.body);
+    // 接口用途：新增知识注释�?    const input = annotationSchema.parse(request.body);
     const store = await loadStore();
     requireConnection(store, input.connectionId);
     const annotation = { id: randomUUID(), updatedAt: new Date().toISOString(), ...input };
@@ -1237,7 +1537,7 @@ app.post("/api/annotations", async (request, response, next) => {
 
 app.put("/api/annotations/:id", async (request, response, next) => {
   try {
-    const input = annotationUpdateSchema.parse(request.body);
+    // 接口用途：更新知识注释�?    const input = annotationUpdateSchema.parse(request.body);
     const store = await loadStore();
     const annotation = requireAnnotation(store, request.params.id);
     Object.assign(annotation, input, { updatedAt: new Date().toISOString() });
@@ -1251,7 +1551,7 @@ app.put("/api/annotations/:id", async (request, response, next) => {
 
 app.delete("/api/annotations/:id", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：删除知识注释�?    const store = await loadStore();
     requireAnnotation(store, request.params.id);
     store.annotations = store.annotations.filter((item) => item.id !== request.params.id);
     await saveStore(store);
@@ -1263,7 +1563,7 @@ app.delete("/api/annotations/:id", async (request, response, next) => {
 
 app.post("/api/ai/annotations/suggest", async (request, response, next) => {
   try {
-    const input = annotationSuggestSchema.parse(request.body);
+    // 接口用途：根据目标路径和样本值生成注释建议�?    const input = annotationSuggestSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, input.connectionId);
     const pathParts = input.targetPath.toLowerCase().split(".");
@@ -1282,7 +1582,7 @@ app.post("/api/ai/annotations/suggest", async (request, response, next) => {
 
 app.post("/api/ai/annotations/suggest-missing", async (request, response, next) => {
   try {
-    const input = missingAnnotationSuggestSchema.parse(request.body);
+    // 接口用途：为缺失字段批量生成注释建议�?    const input = missingAnnotationSuggestSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, input.connectionId);
     const missingPaths = missingColumnPathsForConnection(store, connection.id, input.scope).slice(0, input.limit);
@@ -1311,7 +1611,7 @@ app.post("/api/ai/annotations/suggest-missing", async (request, response, next) 
 
 app.post("/api/ai/schema-context/annotate", async (request, response, next) => {
   try {
-    const input = schemaContextAnnotateSchema.parse(request.body);
+    // 接口用途：基于 schema 上下文生成注释建议�?    const input = schemaContextAnnotateSchema.parse(request.body);
     const store = await loadStore();
     const connection = requireConnection(store, input.connectionId);
     const suggested = await suggestAnnotationsFromSchemaContext(connection, input, store);
@@ -1341,7 +1641,7 @@ app.post("/api/ai/schema-context/annotate", async (request, response, next) => {
 
 app.post("/api/sql/validate", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：校验只读 SQL 并返回执行策略�?    const store = await loadStore();
     const connection = request.body.connectionId
       ? requireConnection(store, request.body.connectionId)
       : { type: request.body.type && dbTypes.includes(request.body.type) ? request.body.type : "postgres" };
@@ -1354,7 +1654,7 @@ app.post("/api/sql/validate", async (request, response, next) => {
 
 app.post("/api/sql/run", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：执行只读 SQL 并记录审计日志�?    const store = await loadStore();
     const connection = requireConnection(store, request.body.connectionId);
     const schemaTables = getSchemaSnapshot(store, connection.id)?.tables ?? [];
     const policy = analyzeSqlPolicy(String(request.body.sql ?? ""), connection, schemaTables, Number(request.body.maxRows ?? 100));
@@ -1378,7 +1678,7 @@ app.post("/api/sql/run", async (request, response, next) => {
 
 app.post("/api/ai/sql/generate", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：根据问题、schema 和注释生�?SQL�?    const store = await loadStore();
     const connection = requireConnection(store, request.body.connectionId);
     const annotations = store.annotations.filter((item) => item.connectionId === connection.id);
     let schema = getSchemaSnapshot(store, connection.id)?.tables ?? [];
@@ -1393,12 +1693,24 @@ app.post("/api/ai/sql/generate", async (request, response, next) => {
     const aiConfig = getAiConfig(store);
     if (aiConfig) {
       const openai = createOpenAIClient(aiConfig);
-      const completion = await openai.chat.completions.create({
+      const completion = await runAiTask({
+        taskName: "SQL generation",
+        taskType: "coding",
         model: aiConfig.model,
-        temperature: 0,
-        messages: [{ role: "user", content: buildPrompt(String(request.body.question ?? ""), connection, schema, annotations) }]
-      });
+        provider: aiConfig.provider,
+        baseURL: aiConfig.baseURL
+      }, async () => openai.chat.completions.create({
+          model: aiConfig.model,
+          temperature: 0,
+          messages: await aiMessages(buildPrompt(String(request.body.question ?? ""), connection, schema, annotations))
+        }));
       sql = completion.choices[0]?.message?.content?.replace(/```sql|```/gi, "").trim() || sql;
+    } else {
+      runtimeLog("ai_task_skipped", {
+        taskName: "SQL generation",
+        reason: "missing_api_key",
+        fallback: true
+      });
     }
     const policy = analyzeSqlPolicy(sql, connection, schema, 100);
     response.json({ sql: policy.finalSql, guarded: true, usedAnnotations: annotations.length, policy });
@@ -1409,7 +1721,7 @@ app.post("/api/ai/sql/generate", async (request, response, next) => {
 
 app.get("/api/audits", async (request, response, next) => {
   try {
-    const store = await loadStore();
+    // 接口用途：查询 SQL 审计记录�?    const store = await loadStore();
     const connectionId = request.query.connectionId;
     const audits = connectionId ? store.audits.filter((item) => item.connectionId === connectionId) : store.audits;
     response.json(audits.slice(-200).reverse());
@@ -1426,6 +1738,22 @@ app.use((error, _request, response, _next) => {
 const port = process.env.PORT || 3000;
 const server = app.listen(port, () => {
   console.log(`DataIO MVP listening on http://localhost:${port}`);
+  // ��������ʱ��¼���ÿ��գ������Ų黷�����졣
+  loadModelOpsConfig()
+        aiSystemPromptPath,
+        modelOpsConfigPath,
+        runtimeLogPath,
+        modelOpsEnabled: modelOps.enabled,
+        modelOpsEndpoint: modelOps.endpoint,
+        modelOpsModelId: modelOps.modelId,
+        modelOpsOwner: modelOps.owner,
+        modelOpsFailureMode: modelOps.failureMode,
+        hasEnvApiKey: Boolean(process.env.OPENAI_API_KEY)
+      });
+    })
+    .catch((error) => {
+      runtimeLog("server_ai_config_failed", { errorMessage: error.message });
+    });
 });
 
 server.on("error", (error) => {
@@ -1435,3 +1763,5 @@ server.on("error", (error) => {
   }
   throw error;
 });
+
+

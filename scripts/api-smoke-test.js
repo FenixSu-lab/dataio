@@ -59,6 +59,7 @@ try {
   const created = await post("/api/connections", {
     name: "ERP Demo",
     type: "mysql",
+    driver: "mysql2",
     businessSystem: "ERP",
     host: "127.0.0.1",
     port: 3306,
@@ -68,10 +69,12 @@ try {
     note: "smoke test"
   });
   assert(created.response.status === 201, "connection should be created");
+  assert(created.body.driver === "mysql2", "connection should preserve selected driver");
   assert(!("password" in created.body), "created connection must not expose password");
 
   const listed = await request("/api/connections");
   assert(listed.body.length === 1, "connection should be listed");
+  assert(listed.body[0].driver === "mysql2", "listed connection should include selected driver");
   assert(!("password" in listed.body[0]), "listed connection must not expose password");
 
   const updatedConnection = await request(`/api/connections/${created.body.id}`, {
@@ -92,6 +95,10 @@ try {
   assert(!("apiKey" in aiSettings.body), "AI settings response must not expose API key");
   const aiSettingsList = await request("/api/settings/ai");
   assert(aiSettingsList.body.profiles.some((profile) => profile.name === "DeepSeek Test"), "AI settings should list profiles");
+  assert(aiSettingsList.body.systemPrompt.configured === true, "AI settings should report configured system prompt");
+  assert(aiSettingsList.body.systemPrompt.path.includes("modelops-system-prompt.md"), "AI settings should expose system prompt file path");
+  assert(aiSettingsList.body.modelOps.enabled === true, "AI settings should expose ModelOps reporting config");
+  assert(aiSettingsList.body.modelOps.path.includes("modelops.json"), "AI settings should expose ModelOps config file path");
   await request(`/api/settings/ai/${aiSettings.body.id}/activate`, { method: "POST" });
 
   const importedSchema = await post(`/api/connections/${created.body.id}/schema/import`, {
