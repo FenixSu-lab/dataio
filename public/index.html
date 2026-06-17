@@ -7,193 +7,283 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header>
-      <div>
-        <p class="eyebrow">DataIO MVP</p>
-        <h1>企业数据库知识库</h1>
-        <p>管理业务库连接、Schema 快照、关键字段说明和只读 AI SQL。</p>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">D</div>
+          <div>
+            <strong>DataIO</strong>
+            <span>数据库知识库</span>
+          </div>
+        </div>
+        <nav class="tabs" aria-label="模块导航">
+          <button class="tab active" data-module-tab="dashboard">总览检索</button>
+          <button class="tab" data-module-tab="connections">数据连接</button>
+          <button class="tab" data-module-tab="schema">表字段</button>
+          <button class="tab" data-module-tab="annotations">知识标注</button>
+          <button class="tab" data-module-tab="sql">SQL 工作台</button>
+          <button class="tab" data-module-tab="ai-settings">AI 配置</button>
+          <button class="tab" data-module-tab="backup">备份迁移</button>
+        </nav>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Enterprise Data Knowledge</p>
+            <h1 id="module-title">总览检索</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="refresh" class="secondary">刷新当前模块</button>
+          </div>
+        </header>
+
+        <main>
+          <section class="module active" data-module="dashboard">
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>全局知识检索</h2>
+                  <p class="hint">跨业务系统搜索连接、表、字段和中文业务标注。</p>
+                </div>
+              </div>
+              <div class="searchbar">
+                <input id="catalog-query" placeholder="搜索字段 / 表 / 中文含义，如 客户、customer_id、订单金额" />
+                <button id="catalog-search" type="button">搜索</button>
+              </div>
+              <div id="catalog-results" class="list"></div>
+            </section>
+
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>知识覆盖率</h2>
+                  <p class="hint">默认只统计关键字段，排除 id、时间戳、日志、权限类低价值标注对象。</p>
+                </div>
+                <div class="actions compact">
+                  <select id="coverage-scope">
+                    <option value="key">只看关键字段</option>
+                    <option value="all">查看全部字段</option>
+                  </select>
+                  <button id="refresh-coverage" type="button" class="secondary">刷新</button>
+                </div>
+              </div>
+              <div id="coverage" class="list"></div>
+            </section>
+          </section>
+
+          <section class="module" data-module="connections">
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>数据连接</h2>
+                  <p class="hint">统一管理 MySQL、Postgres、SQL Server 只读连接。</p>
+                </div>
+                <button id="open-connection-drawer" type="button">新增连接</button>
+              </div>
+              <div class="toolbar">
+                <input id="connection-filter" placeholder="模糊搜索连接名称、系统、库名" />
+                <button id="connection-prev" type="button" class="secondary">上一页</button>
+                <button id="connection-next" type="button" class="secondary">下一页</button>
+              </div>
+              <p id="connection-page-info" class="hint"></p>
+              <div id="connections" class="list"></div>
+            </section>
+          </section>
+
+          <section class="module" data-module="schema">
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>表字段浏览</h2>
+                  <p class="hint">适配 100+ 表场景：先筛选，再分页浏览；表默认折叠，避免页面撑爆。</p>
+                </div>
+              </div>
+              <div class="toolbar">
+                <input id="schema-filter" placeholder="筛选表 / 字段，如 order、customer_id" />
+                <select id="schema-page-size">
+                  <option value="10">每页 10 张表</option>
+                  <option value="20">每页 20 张表</option>
+                  <option value="50">每页 50 张表</option>
+                </select>
+                <button id="schema-prev" type="button" class="secondary">上一页</button>
+                <button id="schema-next" type="button" class="secondary">下一页</button>
+              </div>
+              <details class="import-panel">
+                <summary>导入 Schema 快照</summary>
+                <textarea id="schema-import" placeholder='可选：导入 Schema JSON，如 {"tables":[{"schema":"public","table":"sale_order","columns":[{"name":"customer_id","type":"varchar"}]}]}'></textarea>
+                <button id="import-schema" type="button" class="secondary">导入 Schema 快照</button>
+              </details>
+              <p id="schema-meta" class="hint"></p>
+              <div id="schema" class="schema"></div>
+            </section>
+          </section>
+
+          <section class="module" data-module="annotations">
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>知识标注</h2>
+                  <p class="hint">优先标注业务表说明、关键字段、枚举、常用 Join 和业务口径。</p>
+                </div>
+                <button id="open-annotation-drawer" type="button">新增标注</button>
+              </div>
+              <div class="toolbar">
+                <input id="annotation-filter" placeholder="模糊搜索标注标题、路径、说明、标签" />
+                <button id="annotation-prev" type="button" class="secondary">上一页</button>
+                <button id="annotation-next" type="button" class="secondary">下一页</button>
+              </div>
+              <p id="annotation-page-info" class="hint"></p>
+              <div id="annotations" class="list"></div>
+            </section>
+          </section>
+
+          <section class="module" data-module="sql">
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>SQL 工作台</h2>
+                  <p class="hint">AI 生成、只读校验、受控执行、脱敏审计。</p>
+                </div>
+              </div>
+              <textarea id="question" placeholder="例如：查询最近 30 天每个客户的订单金额"></textarea>
+              <div class="actions">
+                <button id="generate">生成 SQL</button>
+              </div>
+              <textarea id="sql" placeholder="生成或粘贴 SQL，系统只允许只读语句"></textarea>
+              <div class="actions">
+                <button id="validate">校验只读</button>
+                <button id="run">执行查询</button>
+              </div>
+              <div id="sql-policy" class="policy"></div>
+              <pre id="result"></pre>
+              <h3>最近审计</h3>
+              <div class="toolbar">
+                <input id="audit-filter" placeholder="模糊搜索 SQL 或审计时间" />
+                <button id="audit-prev" type="button" class="secondary">上一页</button>
+                <button id="audit-next" type="button" class="secondary">下一页</button>
+              </div>
+              <p id="audit-page-info" class="hint"></p>
+              <div id="audits" class="list"></div>
+            </section>
+          </section>
+
+          <section class="module" data-module="ai-settings">
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>AI 模型配置</h2>
+                  <p class="hint">支持 OpenAI 兼容接口。DeepSeek 可填写 base URL：<code>https://api.deepseek.com</code>。</p>
+                </div>
+              </div>
+              <form id="ai-settings-form" class="form-grid">
+                <input type="hidden" name="id" />
+                <input name="name" placeholder="配置名称，如 DeepSeek 生产" value="DeepSeek" />
+                <input name="provider" placeholder="Provider，如 deepseek" value="deepseek" />
+                <input name="baseUrl" placeholder="Base URL，如 https://api.deepseek.com" value="https://api.deepseek.com" />
+                <input name="model" placeholder="模型，如 deepseek-chat" value="deepseek-chat" />
+                <input name="apiKey" type="password" placeholder="API Key，留空表示不修改已有 Key" />
+                <button type="submit">保存配置</button>
+                <button id="reset-ai-form" type="button" class="secondary">新建配置</button>
+              </form>
+              <div id="ai-profiles" class="list"></div>
+              <p id="ai-system-prompt-status" class="hint"></p>
+              <pre id="ai-settings-status"></pre>
+            </section>
+          </section>
+
+          <section class="module" data-module="backup">
+            <section class="card">
+              <div class="section-head">
+                <div>
+                  <h2>知识备份迁移</h2>
+                  <p class="hint">导出不包含密码；导入只合并连接元信息、Schema 快照和业务标注。</p>
+                </div>
+              </div>
+              <div class="actions">
+                <button id="export-catalog" type="button" class="secondary">导出知识库 JSON</button>
+                <button id="import-catalog" type="button">导入知识库 JSON</button>
+              </div>
+              <textarea id="catalog-import-json" placeholder="粘贴 /api/catalog/export 导出的 JSON"></textarea>
+            </section>
+          </section>
+        </main>
       </div>
-      <button id="refresh">刷新当前模块</button>
-    </header>
+    </div>
 
-    <nav class="tabs" aria-label="模块导航">
-      <button class="tab active" data-module-tab="dashboard">总览</button>
-      <button class="tab" data-module-tab="connections">连接</button>
-      <button class="tab" data-module-tab="schema">表字段</button>
-      <button class="tab" data-module-tab="annotations">知识标注</button>
-      <button class="tab" data-module-tab="sql">AI SQL</button>
-      <button class="tab" data-module-tab="ai-settings">AI 配置</button>
-      <button class="tab" data-module-tab="backup">备份迁移</button>
-    </nav>
+    <div class="drawer-backdrop" data-close-drawer></div>
 
-    <main>
-      <section class="module active" data-module="dashboard">
-        <section class="card full">
-          <h2>全局知识检索</h2>
-          <p class="hint">跨业务系统搜索连接、表、字段和业务标注。</p>
-          <div class="searchbar">
-            <input id="catalog-query" placeholder="搜索字段/表/中文含义，如 客户、customer_id、订单金额" />
-            <button id="catalog-search" type="button">搜索</button>
-          </div>
-          <div id="catalog-results" class="list"></div>
-        </section>
+    <aside id="connection-drawer" class="drawer" aria-label="连接编辑">
+      <div class="drawer-head">
+        <div>
+          <p class="eyebrow">Connection</p>
+          <h2 id="connection-drawer-title">新增连接</h2>
+        </div>
+        <button type="button" class="ghost" data-close-drawer>关闭</button>
+      </div>
+      <form id="connection-form" class="form-stack">
+        <input type="hidden" name="id" />
+        <label>连接名称<input name="name" placeholder="如 ERP 生产只读" required /></label>
+        <div class="split">
+          <label>数据库类型<select name="type">
+            <option value="mysql">MySQL</option>
+            <option value="postgres">Postgres</option>
+            <option value="sqlserver">SQL Server</option>
+          </select></label>
+          <label>驱动<select name="driver">
+            <option value="mysql2">MySQL · mysql2</option>
+            <option value="pg">Postgres · pg</option>
+            <option value="mssql">SQL Server · mssql</option>
+          </select></label>
+        </div>
+        <label>业务系统<select name="businessSystem">
+          <option>ERP</option><option>MES</option><option>PLM</option><option>CRM</option><option>SRM</option><option>OTHER</option>
+        </select></label>
+        <div class="split">
+          <label>Host<input name="host" placeholder="localhost" required /></label>
+          <label>Port<input name="port" type="number" placeholder="3306" value="3306" required /></label>
+        </div>
+        <label>Database<input name="database" placeholder="数据库名" required /></label>
+        <label>只读用户名<input name="username" placeholder="readonly" required /></label>
+        <label>密码<input name="password" type="password" placeholder="留空表示不修改已有密码" /></label>
+        <label class="check-row"><input name="schemaSyncEnabled" type="checkbox" /> 启用定时 Schema 同步</label>
+        <label>同步间隔（分钟）<input name="schemaSyncIntervalMinutes" type="number" min="5" value="60" /></label>
+        <label>备注<textarea name="note" placeholder="用途、负责人、业务范围"></textarea></label>
+        <div class="drawer-actions">
+          <button type="submit">保存连接</button>
+          <button type="button" class="secondary" data-close-drawer>取消</button>
+        </div>
+      </form>
+    </aside>
 
-        <section class="card full">
-          <h2>知识覆盖率</h2>
-          <p class="hint">默认只统计关键字段，自动排除 id、时间戳、日志/权限类表等低价值标注对象。</p>
-          <div class="actions">
-            <select id="coverage-scope">
-              <option value="key">只看关键字段</option>
-              <option value="all">查看全部字段</option>
-            </select>
-            <button id="refresh-coverage" type="button" class="secondary">刷新覆盖率</button>
-          </div>
-          <div id="coverage" class="list"></div>
-        </section>
-      </section>
-
-      <section class="module" data-module="connections">
-        <section class="card full">
-          <h2>数据库连接</h2>
-          <form id="connection-form" class="grid">
-            <input name="name" placeholder="连接名称，如 ERP 生产只读" required />
-            <select name="type">
-              <option value="mysql">MySQL</option>
-              <option value="postgres">Postgres</option>
-              <option value="sqlserver">SQL Server</option>
-            </select>
-            <select name="driver">
-              <option value="mysql2" data-type="mysql">MySQL · mysql2</option>
-              <option value="pg" data-type="postgres">Postgres · pg</option>
-              <option value="mssql" data-type="sqlserver">SQL Server · mssql</option>
-            </select>
-            <select name="businessSystem">
-              <option>ERP</option><option>MES</option><option>PLM</option><option>CRM</option><option>SRM</option><option>OTHER</option>
-            </select>
-            <input name="host" placeholder="Host" required />
-            <input name="port" type="number" placeholder="Port" value="3306" required />
-            <input name="database" placeholder="Database" required />
-            <input name="username" placeholder="只读用户名" required />
-            <input name="password" type="password" placeholder="密码" />
-            <textarea name="note" placeholder="用途、负责人、业务范围"></textarea>
-            <button type="submit">保存连接</button>
-          </form>
-          <div class="toolbar">
-            <input id="connection-filter" placeholder="模糊搜索连接名称、系统、库名" />
-            <button id="connection-prev" type="button" class="secondary">上一页</button>
-            <button id="connection-next" type="button" class="secondary">下一页</button>
-          </div>
-          <p id="connection-page-info" class="hint"></p>
-          <div id="connections" class="list"></div>
-        </section>
-      </section>
-
-      <section class="module" data-module="schema">
-        <section class="card full">
-          <h2>表字段浏览</h2>
-          <p class="hint">适合 100+ 表场景：先筛选，再分页浏览；表默认折叠，避免页面撑爆。</p>
-          <div class="toolbar">
-            <input id="schema-filter" placeholder="筛选表/字段，如 order、customer_id" />
-            <select id="schema-page-size">
-              <option value="10">每页 10 张表</option>
-              <option value="20">每页 20 张表</option>
-              <option value="50">每页 50 张表</option>
-            </select>
-            <button id="schema-prev" type="button" class="secondary">上一页</button>
-            <button id="schema-next" type="button" class="secondary">下一页</button>
-          </div>
-          <textarea id="schema-import" placeholder='可选：导入 Schema JSON，如 {"tables":[{"schema":"public","table":"sale_order","columns":[{"name":"customer_id","type":"varchar"}]}]}'></textarea>
-          <button id="import-schema" type="button" class="secondary">导入 Schema 快照</button>
-          <p id="schema-meta" class="hint"></p>
-          <div id="schema" class="schema"></div>
-        </section>
-      </section>
-
-      <section class="module" data-module="annotations">
-        <section class="card full">
-          <h2>知识标注</h2>
-          <p class="hint">不是所有字段都要标。优先标注：业务表说明、关键业务字段、枚举、常用 Join、业务口径。</p>
-          <form id="annotation-form" class="grid">
-            <select name="targetType">
-              <option value="table">表说明</option>
-              <option value="column">关键字段</option>
-              <option value="enum">枚举</option>
-              <option value="join">常用 Join</option>
-              <option value="metric">业务口径</option>
-              <option value="database">数据库说明</option>
-            </select>
-            <input name="targetPath" placeholder="路径，如 public.sale_order.customer_id" required />
-            <input name="title" placeholder="标题，如 客户ID" required />
-            <textarea name="description" placeholder="中文业务含义、口径、枚举值、关联关系" required></textarea>
-            <input name="tags" placeholder="标签，逗号分隔，如 关键字段,订单" />
-            <button id="suggest-annotation" type="button" class="secondary">AI 建议说明</button>
-            <button type="submit">保存标注</button>
-          </form>
-          <div class="toolbar">
-            <input id="annotation-filter" placeholder="模糊搜索标注标题、路径、说明、标签" />
-            <button id="annotation-prev" type="button" class="secondary">上一页</button>
-            <button id="annotation-next" type="button" class="secondary">下一页</button>
-          </div>
-          <p id="annotation-page-info" class="hint"></p>
-          <div id="annotations" class="list"></div>
-        </section>
-      </section>
-
-      <section class="module" data-module="sql">
-        <section class="card full">
-          <h2>AI 生成只读 SQL</h2>
-          <textarea id="question" placeholder="例如：查询最近 30 天每个客户的订单金额"></textarea>
-          <button id="generate">生成 SQL</button>
-          <textarea id="sql" placeholder="生成或粘贴 SQL，系统只允许只读语句"></textarea>
-          <div class="actions">
-            <button id="validate">校验只读</button>
-            <button id="run">执行查询</button>
-          </div>
-          <div id="sql-policy" class="policy"></div>
-          <pre id="result"></pre>
-          <h3>最近审计</h3>
-          <div class="toolbar">
-            <input id="audit-filter" placeholder="模糊搜索 SQL 或审计时间" />
-            <button id="audit-prev" type="button" class="secondary">上一页</button>
-            <button id="audit-next" type="button" class="secondary">下一页</button>
-          </div>
-          <p id="audit-page-info" class="hint"></p>
-          <div id="audits" class="list"></div>
-        </section>
-      </section>
-
-      <section class="module" data-module="ai-settings">
-        <section class="card full">
-          <h2>AI 模型配置</h2>
-          <p class="hint">支持 OpenAI 兼容接口。DeepSeek 可填写 base URL：<code>https://api.deepseek.com</code>，模型如 <code>deepseek-chat</code>。</p>
-          <form id="ai-settings-form" class="grid">
-            <input type="hidden" name="id" />
-            <input name="name" placeholder="配置名称，如 DeepSeek 生产" value="DeepSeek" />
-            <input name="provider" placeholder="Provider，如 deepseek" value="deepseek" />
-            <input name="baseUrl" placeholder="Base URL，如 https://api.deepseek.com" value="https://api.deepseek.com" />
-            <input name="model" placeholder="模型，如 deepseek-chat" value="deepseek-chat" />
-            <input name="apiKey" type="password" placeholder="API Key，留空表示不修改已有 Key" />
-            <button type="submit">保存配置</button>
-            <button id="reset-ai-form" type="button" class="secondary">新建配置</button>
-          </form>
-          <div id="ai-profiles" class="list"></div>
-          <p id="ai-system-prompt-status" class="hint"></p>
-          <pre id="ai-settings-status"></pre>
-        </section>
-      </section>
-
-      <section class="module" data-module="backup">
-        <section class="card full">
-          <h2>知识备份迁移</h2>
-          <p class="hint">导出不包含密码；导入只合并连接元信息、Schema 快照和业务标注。</p>
-          <div class="actions">
-            <button id="export-catalog" type="button" class="secondary">导出知识库 JSON</button>
-            <button id="import-catalog" type="button">导入知识库 JSON</button>
-          </div>
-          <textarea id="catalog-import-json" placeholder="粘贴 /api/catalog/export 导出的 JSON"></textarea>
-        </section>
-      </section>
-    </main>
+    <aside id="annotation-drawer" class="drawer" aria-label="标注编辑">
+      <div class="drawer-head">
+        <div>
+          <p class="eyebrow">Knowledge</p>
+          <h2 id="annotation-drawer-title">新增标注</h2>
+        </div>
+        <button type="button" class="ghost" data-close-drawer>关闭</button>
+      </div>
+      <form id="annotation-form" class="form-stack">
+        <input type="hidden" name="id" />
+        <label>标注类型<select name="targetType">
+          <option value="table">表说明</option>
+          <option value="column">关键字段</option>
+          <option value="enum">枚举</option>
+          <option value="join">常用 Join</option>
+          <option value="metric">业务口径</option>
+          <option value="database">数据库说明</option>
+        </select></label>
+        <label>目标路径<input name="targetPath" placeholder="如 public.sale_order.customer_id" required /></label>
+        <label>标题<input name="title" placeholder="如 客户ID" required /></label>
+        <label>说明<textarea name="description" placeholder="中文业务含义、口径、枚举值、关联关系" required></textarea></label>
+        <label>标签<input name="tags" placeholder="逗号分隔，如 关键字段,订单" /></label>
+        <div class="drawer-actions">
+          <button id="suggest-annotation" type="button" class="secondary">AI 建议说明</button>
+          <button type="submit">保存标注</button>
+        </div>
+      </form>
+    </aside>
 
     <dialog id="schema-ai-dialog">
       <form method="dialog" class="dialog-card">

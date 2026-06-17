@@ -15,6 +15,15 @@ const driverOptions = {
   sqlserver: [{ value: "mssql", label: "SQL Server · mssql" }]
 };
 const defaultPorts = { mysql: 3306, postgres: 5432, sqlserver: 1433 };
+const moduleTitles = {
+  dashboard: "总览检索",
+  connections: "数据连接",
+  schema: "表字段",
+  annotations: "知识标注",
+  sql: "SQL 工作台",
+  "ai-settings": "AI 配置",
+  backup: "备份迁移"
+};
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -74,6 +83,70 @@ function switchModule(moduleName) {
   activeModule = moduleName;
   $$("[data-module]").forEach((section) => section.classList.toggle("active", section.dataset.module === moduleName));
   $$("[data-module-tab]").forEach((tab) => tab.classList.toggle("active", tab.dataset.moduleTab === moduleName));
+  $("#module-title").textContent = moduleTitles[moduleName] ?? "DataIO";
+}
+
+function openDrawer(id) {
+  $(".drawer-backdrop").classList.add("open");
+  $(id).classList.add("open");
+}
+
+function closeDrawers() {
+  $(".drawer-backdrop").classList.remove("open");
+  $$(".drawer").forEach((drawer) => drawer.classList.remove("open"));
+}
+
+function resetConnectionForm() {
+  const form = $("#connection-form");
+  form.reset();
+  form.elements.id.value = "";
+  form.elements.port.value = defaultPorts[form.elements.type.value] ?? 3306;
+  syncConnectionDriver(form.elements.type.value);
+  $("#connection-drawer-title").textContent = "新增连接";
+}
+
+function openConnectionForm(connection = null) {
+  resetConnectionForm();
+  const form = $("#connection-form");
+  if (connection) {
+    $("#connection-drawer-title").textContent = "编辑连接";
+    form.elements.id.value = connection.id;
+    form.elements.name.value = connection.name ?? "";
+    form.elements.type.value = connection.type ?? "mysql";
+    syncConnectionDriver(form.elements.type.value, connection.driver);
+    form.elements.businessSystem.value = connection.businessSystem ?? "OTHER";
+    form.elements.host.value = connection.host ?? "";
+    form.elements.port.value = connection.port ?? defaultPorts[connection.type] ?? "";
+    form.elements.database.value = connection.database ?? "";
+    form.elements.username.value = connection.username ?? "";
+    form.elements.password.value = "";
+    if (form.elements.schemaSyncEnabled) form.elements.schemaSyncEnabled.checked = Boolean(connection.schemaSyncEnabled);
+    if (form.elements.schemaSyncIntervalMinutes) form.elements.schemaSyncIntervalMinutes.value = connection.schemaSyncIntervalMinutes ?? 60;
+    form.elements.note.value = connection.note ?? "";
+  }
+  openDrawer("#connection-drawer");
+}
+
+function resetAnnotationForm() {
+  const form = $("#annotation-form");
+  form.reset();
+  form.elements.id.value = "";
+  $("#annotation-drawer-title").textContent = "新增标注";
+}
+
+function openAnnotationForm(annotation = null) {
+  resetAnnotationForm();
+  const form = $("#annotation-form");
+  if (annotation) {
+    $("#annotation-drawer-title").textContent = "编辑标注";
+    form.elements.id.value = annotation.id;
+    form.elements.targetType.value = annotation.targetType;
+    form.elements.targetPath.value = annotation.targetPath;
+    form.elements.title.value = annotation.title;
+    form.elements.description.value = annotation.description;
+    form.elements.tags.value = (annotation.tags ?? []).join(", ");
+  }
+  openDrawer("#annotation-drawer");
 }
 
 function renderPolicy(policy) {
@@ -93,11 +166,12 @@ function renderPolicy(policy) {
 
 function fillAnnotationForm(targetType, targetPath, title = "") {
   const form = $("#annotation-form");
+  resetAnnotationForm();
   form.elements.targetType.value = targetType;
   form.elements.targetPath.value = targetPath;
   if (title) form.elements.title.value = title;
   switchModule("annotations");
-  form.scrollIntoView({ behavior: "smooth", block: "start" });
+  openDrawer("#annotation-drawer");
 }
 
 function currentSchemaRows() {
@@ -174,7 +248,7 @@ function renderConnections() {
     item.className = `item ${connection.id === selectedConnectionId ? "active" : ""}`;
     item.innerHTML = `
       <strong>${connection.name}</strong>
-      <p class="hint">${connection.businessSystem} · ${connection.type} · ${connection.host}:${connection.port}/${connection.database}</p>
+      <p class="hint">${connection.businessSystem} · ${connection.type} · ${connection.driver || ""} · ${connection.host}:${connection.port}/${connection.database}</p>
       <button data-select="${connection.id}">选择</button>
       <button class="secondary" data-edit-connection="${connection.id}">编辑</button>
       <button class="secondary" data-test="${connection.id}">测试</button>
@@ -204,7 +278,7 @@ function renderAnnotations() {
       <strong>${annotation.title}</strong>
       <p>${annotation.description}</p>
       <p class="hint">${annotation.targetType} · ${annotation.targetPath} · ${annotation.tags.join(", ")}</p>
-      <button class="secondary" data-edit-annotation="${annotation.id}">编辑说明</button>
+      <button class="secondary" data-edit-annotation="${annotation.id}">编辑</button>
       <button class="danger" data-delete-annotation="${annotation.id}">删除</button>
     `;
     container.appendChild(item);
@@ -328,6 +402,11 @@ async function loadSchema(connectionId) {
 $$("[data-module-tab]").forEach((tab) => {
   tab.addEventListener("click", () => switchModule(tab.dataset.moduleTab));
 });
+
+$("[data-close-drawer]").addEventListener("click", closeDrawers);
+$$("[data-close-drawer]").forEach((button) => button.addEventListener("click", closeDrawers));
+$("#open-connection-drawer").addEventListener("click", () => openConnectionForm());
+$("#open-annotation-drawer").addEventListener("click", () => openAnnotationForm());
 
 syncConnectionDriver($("#connection-form").elements.type.value);
 
@@ -489,11 +568,20 @@ $("#connection-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const body = formJson(event.target);
   body.port = Number(body.port);
+  if (event.target.elements.schemaSyncEnabled) body.schemaSyncEnabled = event.target.elements.schemaSyncEnabled.checked;
+  if (event.target.elements.schemaSyncIntervalMinutes) body.schemaSyncIntervalMinutes = Number(body.schemaSyncIntervalMinutes || 60);
+  const id = body.id;
+  if (!body.password) delete body.password;
+  delete body.id;
   try {
-    const connection = await api("/api/connections", { method: "POST", body: JSON.stringify(body) });
+    const connection = await api(id ? `/api/connections/${id}` : "/api/connections", {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify(body)
+    });
     selectedConnectionId = connection.id;
-    event.target.reset();
-    await loadConnections();
+    resetConnectionForm();
+    closeDrawers();
+    await refreshKnowledgeViews();
   } catch (error) {
     alert(error.message);
   }
@@ -509,10 +597,16 @@ $("#annotation-form").addEventListener("submit", async (event) => {
   const body = formJson(event.target);
   body.connectionId = selectedConnectionId;
   body.tags = body.tags ? body.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
+  const id = body.id;
+  delete body.id;
   try {
-    const annotation = await api("/api/annotations", { method: "POST", body: JSON.stringify(body) });
+    const annotation = await api(id ? `/api/annotations/${id}` : "/api/annotations", {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify(body)
+    });
     renderJson($("#result"), annotation);
-    event.target.reset();
+    resetAnnotationForm();
+    closeDrawers();
     await loadAnnotations();
     await loadCoverage();
   } catch (error) {
@@ -608,24 +702,7 @@ $("#connections").addEventListener("click", async (event) => {
       const connections = await api("/api/connections");
       const connection = connections.find((item) => item.id === id);
       if (!connection) return alert("连接不存在");
-      const name = prompt("连接名称", connection.name);
-      if (!name) return;
-      const type = prompt("Database type: mysql / postgres / sqlserver", connection.type);
-      if (!type || !driverOptions[type]) return alert("Unsupported database type");
-      const driver = prompt(`Driver: ${driverOptions[type].map((option) => option.value).join(" / ")}`, connection.driver || driverOptions[type][0].value);
-      if (!driverOptions[type].some((option) => option.value === driver)) return alert("Unsupported driver");
-      const host = prompt("Host", connection.host);
-      if (!host) return;
-      const port = Number(prompt("Port", connection.port));
-      if (!port) return;
-      const database = prompt("Database", connection.database);
-      if (!database) return;
-      const note = prompt("备注", connection.note ?? "") ?? "";
-      await api(`/api/connections/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ name, type, driver, host, port, database, note })
-      });
-      await refreshKnowledgeViews();
+      openConnectionForm(connection);
     }
     if (event.target.dataset.test) {
       alert(JSON.stringify(await api(`/api/connections/${id}/test`, { method: "POST" })));
@@ -648,12 +725,9 @@ $("#annotations").addEventListener("click", async (event) => {
   const deleteId = event.target.dataset.deleteAnnotation;
   try {
     if (editId) {
-      const description = prompt("输入新的业务说明");
-      if (!description) return;
-      const annotation = await api(`/api/annotations/${editId}`, { method: "PUT", body: JSON.stringify({ description }) });
-      renderJson($("#result"), annotation);
-      await loadAnnotations();
-      await loadCoverage();
+      const annotation = annotationRows.find((item) => item.id === editId) || (await api("/api/annotations")).find((item) => item.id === editId);
+      if (!annotation) return alert("标注不存在");
+      openAnnotationForm(annotation);
     }
     if (deleteId && confirm("确定删除这条标注？")) {
       await api(`/api/annotations/${deleteId}`, { method: "DELETE" });
